@@ -40,11 +40,8 @@ type Config struct {
 	Region           string
 	
 	// VPC/Network config
-	VPCSubnetID   string
-	RouterID      string
 	RouteTableID  string
 	MetricsPort   string
-
 	ClusterCIDR   string
 	ServiceCIDR   string
 }
@@ -794,8 +791,6 @@ func loadConfigFromEnv() *Config {
 		DomainName:       getEnvOrDefault("OS_DOMAIN_NAME", "OTC00000000001000000xxx"),
 		ProjectName:      os.Getenv("OS_PROJECT_NAME"),
 		Region:           getEnvOrDefault("OS_REGION_NAME", "eu-de"),
-		VPCSubnetID:      os.Getenv("VPC_SUBNET_ID"),
-		RouterID:         os.Getenv("ROUTER_ID"),
 		RouteTableID:     os.Getenv("ROUTE_TABLE_ID"),
 		MetricsPort:      getEnvOrDefault("METRICS_PORT", "8080"),
 		ClusterCIDR:      os.Getenv("CLUSTER_CIDR"),

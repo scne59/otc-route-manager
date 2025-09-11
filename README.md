@@ -100,8 +100,6 @@ make status
 | `ROUTE_TABLE_ID` | VPC route table ID | `b18094bf-4761-4d71-85c7-3a9b74f4b7c8` | ✅ |
 | `CLUSTER_CIDR` | Pod network CIDRs | `10.244.0.0/16` | ✅ |
 | `SERVICE_CIDR` | Service network CIDRs | `10.96.0.0/12` | ✅ |
-| `VPC_SUBNET_ID` | VPC subnet ID | `subnet-id` | ❌ |
-| `ROUTER_ID` | Router ID | `router-id` | ❌ |
 | `METRICS_PORT` | Metrics server port | `8080` | ❌ |
 
 ### OTC Permissions
