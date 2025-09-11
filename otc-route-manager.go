@@ -793,8 +793,8 @@ func loadConfigFromEnv() *Config {
 		Region:           getEnvOrDefault("OS_REGION_NAME", "eu-de"),
 		RouteTableID:     os.Getenv("ROUTE_TABLE_ID"),
 		MetricsPort:      getEnvOrDefault("METRICS_PORT", "8080"),
-		ClusterCIDR:      os.Getenv("CLUSTER_CIDR"),
-		ServiceCIDR:      os.Getenv("SERVICE_CIDR"),
+		ClusterCIDR:      getEnvOrDefault("CLUSTER_CIDR", "192.168.0.0/16"),
+		ServiceCIDR:      getEnvOrDefault("SERVICE_CIDR", "172.16.0.0/16"),
 	}
 }
 
