@@ -28,7 +28,7 @@ WORKDIR /root/
 
 # Copy the binary from builder stage
 COPY --from=builder /app/otc-route-manager .
-chown root:root /app/route-manager
+RUN chown root:root /app/route-manager
 
 # Expose metrics port
 EXPOSE 8080
