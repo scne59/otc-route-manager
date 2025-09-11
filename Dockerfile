@@ -24,11 +24,10 @@ FROM alpine:3.18
 # Install ca-certificates and wget for health checks
 RUN apk --no-cache add ca-certificates wget
 
-WORKDIR /root/
+WORKDIR /app
 
 # Copy the binary from builder stage
 COPY --from=builder /app/otc-route-manager .
-chown root:root /app/route-manager
 
 # Expose metrics port
 EXPOSE 8080
