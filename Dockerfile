@@ -29,16 +29,6 @@ WORKDIR /root/
 # Copy the binary from builder stage
 COPY --from=builder /app/otc-route-manager .
 
-# Create non-root user
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
-
-# Change ownership of the binary
-RUN chown appuser:appgroup /root/otc-route-manager
-
-# Switch to non-root user
-USER 1001
-
 # Expose metrics port
 EXPOSE 8080
 
