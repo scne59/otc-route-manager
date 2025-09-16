@@ -1,15 +1,15 @@
-# OTC Route Manager - OpenShift/Kubernetes Deployment/Daemonset
+# OTC Route Manager - OpenShift/Kubernetes Deployment/DaemonSet
 
-The OTC Route Manager is a Kubernetes program that automatically manages VPC routes for cluster network traffic in Open Telekom Cloud (OTC). It runs on worker nodes and creates/updates routes to direct cluster and service traffic to the appropriate ECS instances.
+The **OTC Route Manager** is a Kubernetes program that automatically manages VPC routes for cluster network traffic in the Open Telekom Cloud (OTC). It runs on worker nodes and creates or updates routes to direct cluster and service traffic to the appropriate ECS instances.
 
 ## Features
 
-- **Cluster Traffic Only**: Only manages routes for cluster pod CIDRs and service CIDRs
-- **Worker Node Targeting**: Runs only on worker nodes, ignoring master/control-plane nodes
-- **Safe Route Management**: Never touches default routes (0.0.0.0/0) or non-cluster routes
-- **Prometheus Metrics**: Exposes metrics for monitoring and alerting
-- **OpenShift Security**: Follows OpenShift security best practices with restricted security contexts
-- **High Availability**: Can runs as a DaemonSet with proper health checks and rolling updates
+- **Cluster Traffic Only:** Manages routes exclusively for cluster pod CIDRs and service CIDRs.
+- **Worker Node Targeting:** Runs only on worker nodes; master/control-plane nodes are ignored.
+- **Safe Route Management:** Never modifies default routes (`0.0.0.0/0`) or non-cluster routes.
+- **Prometheus Metrics:** Exposes metrics for monitoring and alerting.
+- **OpenShift Security:** Follows OpenShift security best practices with restricted security contexts.
+- **High Availability:** Runs as a DaemonSet with health checks and supports rolling updates.
 
 ## Architecture
 
@@ -29,59 +29,59 @@ The OTC Route Manager is a Kubernetes program that automatically manages VPC rou
                     │   OTC VPC Router    │
                     │   Route Table       │
                     │                     │
-                    │ 10.244.1.0/24 →     │
+                    │ 192.168.1.0/24 →    │
                     │   node-1-instance   │
-                    │ 10.244.2.0/24 →     │
+                    │ 192.168.2.0/24 →    │
                     │   node-2-instance   │
-                    │ 10.244.3.0/24 →     │
+                    │ 192.168.3.0/24 →    │
                     │   node-3-instance   │
                     └─────────────────────┘
 ```
 
 ## Prerequisites
 
-1. **OpenShift/Kubernetes Cluster**: Running on OTC with worker nodes as ECS instances
-2. **OTC Credentials**: Service account with VPC and ECS permissions
-3. **Network Configuration**: 
-   - VPC with route table
-   - Worker nodes with `k8s.ovn.org/node-subnets` annotations
-4. **Container Registry**: To store the built image
+1. **OpenShift/Kubernetes Cluster:** Running on OTC, with worker nodes provisioned as ECS instances.
+2. **OTC Credentials:** Service account with necessary VPC and ECS permissions.
+3. **Network Configuration:** 
+   - VPC configured with a route table.
+   - Worker nodes annotated with `k8s.ovn.org/node-subnets`.
+4. **Container Registry:** To store and pull the built container image.
 
 ## Quick Start
 
-### 1. Build and Push Image
+### 1. Build and Push the Image
 
 ```bash
-# Clone the repository and navigate to it
-# Ensure the Go source code and Dockerfile are in the current directory
+# Clone the repository and navigate to its root directory
+# Confirm Go source code and Dockerfile are present
 
 # Build the Docker image
 make docker-build IMAGE_NAME=your-registry.com/otc-route-manager IMAGE_TAG=v1.0.0
 
-# Push to your registry
+# Push the image to your registry
 make docker-push REGISTRY=your-registry.com IMAGE_TAG=v1.0.0
 ```
 
 ### 2. Configure Deployment
 
-Edit the manifests to include your configuration:
+Edit the manifests to customize your setup:
 
 ```bash
-# Interactive setup (recommended)
+# Recommended interactive setup
 make setup
 
-# Or manually edit the files:
-# 1. Update the image reference in manifests.yaml
-# 2. Configure secrets and configmaps with your values
+# Or manual configuration:
+# 1. Update image reference in manifests.yaml
+# 2. Edit secrets and configmaps with your credentials and configuration values
 ```
 
-### 3. Deploy
+### 3. Deploy the Application
 
 ```bash
-# Apply all manifests
+# Deploy all resources
 make deploy
 
-# Check deployment status
+# Verify deployment status
 make status
 ```
 
@@ -89,22 +89,22 @@ make status
 
 ### Environment Variables
 
-| Variable | Description | Example | Required |
-|----------|-------------|---------|----------|
-| `OS_USERNAME` | OTC username | `your-username` | ✅ |
-| `OS_PASSWORD` | OTC password | `your-password` | ✅ |
-| `OS_PROJECT_NAME` | OTC project name | `eu-de` | ✅ |
-| `OS_DOMAIN_NAME` | OTC domain name | `OTC00000000001000000xxx` | ✅ |
-| `OS_AUTH_URL` | OTC identity endpoint | `https://iam.eu-de.otc.t-systems.com/v3` | ✅ |
-| `OS_REGION_NAME` | OTC region | `eu-de` | ✅ |
-| `ROUTE_TABLE_ID` | VPC route table ID | `b18094bf-4761-4d71-85c7-3a9b74f4b7c8` | ✅ |
-| `CLUSTER_CIDR` | Pod network CIDRs | `10.244.0.0/16` | ✅ |
-| `SERVICE_CIDR` | Service network CIDRs | `10.96.0.0/12` | ✅ |
-| `METRICS_PORT` | Metrics server port | `8080` | ❌ |
+| Variable         | Description                | Example                                  | Required |
+|------------------|----------------------------|------------------------------------------|----------|
+| `OS_USERNAME`    | OTC username               | `your-username`                          | ✅       |
+| `OS_PASSWORD`    | OTC password               | `your-password`                          | ✅       |
+| `OS_PROJECT_NAME`| OTC project name           | `eu-de`                                  | ✅       |
+| `OS_DOMAIN_NAME` | OTC domain name            | `OTC00000000001000000xxx`                | ✅       |
+| `OS_AUTH_URL`    | OTC identity endpoint      | `https://iam.eu-de.otc.t-systems.com/v3` | ✅       |
+| `OS_REGION_NAME` | OTC region                 | `eu-de`                                  | ✅       |
+| `ROUTE_TABLE_ID` | VPC route table ID         | `b18094bf-4761-4d71-85c7-3a9b74f4b7c8`   | ✅       |
+| `CLUSTER_CIDR`   | Pod network CIDRs          | `192.168.0.0/16`                         | ✅       |
+| `SERVICE_CIDR`   | Service network CIDRs      | `172.16.0.0/16`                          | ✅       |
+| `METRICS_PORT`   | Port for metrics server    | `8080`                                   | ❌       |
 
-### OTC Permissions
+### Required OTC Permissions
 
-The service account needs the following OTC permissions:
+The service account requires the following OTC IAM permissions:
 
 ```json
 {
@@ -127,30 +127,29 @@ The service account needs the following OTC permissions:
 
 ## Security
 
-The deployment follows OpenShift security best practices:
+The deployment complies with OpenShift security best practices:
 
-- **Non-root containers**: Runs as user 1001
-- **Read-only filesystem**: Root filesystem is read-only
-- **No privileged access**: All capabilities dropped
-- **Security contexts**: Restricted security contexts applied
-- **Pod Security Standards**: Compatible with restricted pod security
+- Runs containers as non-root user **1001**.
+- Root filesystem is **read-only**.
+- No privileged escalation; all Linux capabilities are dropped.
+- Restricted security contexts applied.
+- Compatible with the OpenShift and Kubernetes Pod Security Standards at the **restricted** level.
 
 ## Monitoring
 
 ### Metrics
 
-The route manager exposes Prometheus metrics on port 8080:
-
-- `route_manager_nodes_processed_total{status="success|error|skipped"}`: Number of nodes processed
+- Exposes Prometheus-compatible metrics on the configured port (default `8080`).
+- Key metric: `route_manager_nodes_processed_total{status="success|error|skipped"}` indicates processed node counts with status.
 
 ### Health Checks
 
-- **Liveness Probe**: `/health` endpoint on port 8080
-- **Readiness Probe**: `/health` endpoint on port 8080
+- **Liveness Probe:** HTTP GET on `/health` endpoint.
+- **Readiness Probe:** HTTP GET on `/health` endpoint.
 
-### ServiceMonitor
+### Prometheus Integration
 
-A ServiceMonitor is included for Prometheus Operator integration.
+Includes a `ServiceMonitor` resource for easy integration with the Prometheus Operator.
 
 ## Troubleshooting
 
@@ -158,90 +157,62 @@ A ServiceMonitor is included for Prometheus Operator integration.
 
 1. **Authentication Errors**
    ```bash
-   # Check credentials
    kubectl get secret otc-credentials -n otc-route-manager -o yaml
-   
-   # Verify OTC connectivity
    make logs
    ```
 
 2. **Route Creation Failures**
    ```bash
-   # Check route table configuration
    kubectl get configmap otc-route-manager-config -n otc-route-manager -o yaml
-   
-   # Verify node annotations
    kubectl get nodes -o yaml | grep -A 10 "k8s.ovn.org/node-subnets"
    ```
 
 3. **Permission Issues**
    ```bash
-   # Check RBAC
    kubectl auth can-i list nodes --as=system:serviceaccount:otc-route-manager:otc-route-manager
    ```
 
-### Debugging Commands
+### Debug Commands
 
 ```bash
-# View logs
 make logs
-
-# Check pod status
 kubectl get pods -n otc-route-manager -o wide
-
-# Describe DaemonSet
 kubectl describe daemonset otc-route-manager -n otc-route-manager
-
-# Port forward for metrics
 make port-forward
 # Then visit http://localhost:8080/metrics
-
-# Check node selector matching
 kubectl get nodes --show-labels | grep worker
 ```
 
-### Log Analysis
+### Log Messages
 
-Look for these log patterns:
-
-- `✅ Success`: `Successfully processed node`
-- `ℹ️ Info`: `Skipping route X: not cluster traffic`
-- `⚠️ Warning`: `Skipping node X: subnet Y is not cluster traffic`
-- `❌ Error`: `Error processing node X: failed to create/update route`
+- `✅ Success`: Successfully processed node.
+- `ℹ️ Info`: Skipping route; not cluster traffic.
+- `⚠️ Warning`: Skipping node; subnet not cluster traffic.
+- `❌ Error`: Failed to create or update route.
 
 ## Maintenance
 
-### Updating Configuration
+### Update Configuration
 
 ```bash
-# Update secrets
 make create-secrets
-
-# Update configmap
 make create-configmap
-
-# Restart DaemonSet to pick up changes
-make restart
+make restart  # Restart DaemonSet to apply changes
 ```
 
-### Image Updates
+### Update Image
 
 ```bash
-# Build new image
 make docker-build IMAGE_TAG=v1.1.0
-
-# Push new image
 make docker-push IMAGE_TAG=v1.1.0
-
-# Update deployment (edit manifests.yaml first)
+# Update image reference in manifests.yaml
 make deploy
 ```
 
 ## Uninstallation
 
 ```bash
-# Remove all resources
-make undeploy
+make undeploy  # Remove all resources deployed by this manager
 ```
 
 ## Development
@@ -249,44 +220,26 @@ make undeploy
 ### Local Testing
 
 ```bash
-# Install dependencies
-make deps
-
-# Run tests
-make test
-
-# Build locally
-make build
+make deps       # Install dependencies
+make test       # Run tests
+make build      # Build locally
 ```
 
 ### Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+1. Fork the repository.
+2. Create a feature branch.
+3. Implement your changes.
+4. Add appropriate tests.
+5. Submit a pull request.
 
 ## License
 
-MIT License
+MIT License © 2025 Jochen Schneider
 
-Copyright (c) 2025 Jochen Schneider
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the following conditions:
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
