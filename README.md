@@ -1,6 +1,6 @@
-# OTC Route Manager - OpenShift/Kubernetes Deployment
+# OTC Route Manager - OpenShift/Kubernetes Deployment/Daemonset
 
-The OTC Route Manager is a Kubernetes DaemonSet that automatically manages VPC routes for cluster network traffic in Open Telekom Cloud (OTC). It runs on worker nodes and creates/updates routes to direct cluster and service traffic to the appropriate ECS instances.
+The OTC Route Manager is a Kubernetes program that automatically manages VPC routes for cluster network traffic in Open Telekom Cloud (OTC). It runs on worker nodes and creates/updates routes to direct cluster and service traffic to the appropriate ECS instances.
 
 ## Features
 
@@ -9,7 +9,7 @@ The OTC Route Manager is a Kubernetes DaemonSet that automatically manages VPC r
 - **Safe Route Management**: Never touches default routes (0.0.0.0/0) or non-cluster routes
 - **Prometheus Metrics**: Exposes metrics for monitoring and alerting
 - **OpenShift Security**: Follows OpenShift security best practices with restricted security contexts
-- **High Availability**: Runs as a DaemonSet with proper health checks and rolling updates
+- **High Availability**: Can runs as a DaemonSet with proper health checks and rolling updates
 
 ## Architecture
 
@@ -29,11 +29,11 @@ The OTC Route Manager is a Kubernetes DaemonSet that automatically manages VPC r
                     │   OTC VPC Router    │
                     │   Route Table       │
                     │                     │
-                    │ 10.244.1.0/24 →    │
+                    │ 10.244.1.0/24 →     │
                     │   node-1-instance   │
-                    │ 10.244.2.0/24 →    │
+                    │ 10.244.2.0/24 →     │
                     │   node-2-instance   │
-                    │ 10.244.3.0/24 →    │
+                    │ 10.244.3.0/24 →     │
                     │   node-3-instance   │
                     └─────────────────────┘
 ```
@@ -269,4 +269,24 @@ make build
 
 ## License
 
-This project is licensed under the Apache License 2.0.
+MIT License
+
+Copyright (c) 2025 Jochen Schneider
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
