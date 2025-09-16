@@ -31,7 +31,7 @@ type Config struct {
 	// Kubernetes config
 	KubeConfigPath string
 	NodeName       string
-	
+
 	// Open Telekom Cloud config
 	IdentityEndpoint string
 	Username         string
@@ -39,13 +39,12 @@ type Config struct {
 	DomainName       string
 	ProjectName      string
 	Region           string
-	
+
 	// VPC/Network config
-	RouteTableID  string
-	MetricsPort   string
-	ClusterCIDR   string
-	ServiceCIDR   string
-	
+	RouteTableID string
+	MetricsPort  string
+	ClusterCIDR  string
+
 	// Daemonset mode configuration
 	IsDaemonset    bool
 	UpdateInterval time.Duration
@@ -60,11 +59,10 @@ type RouteManager struct {
 	identityClient *gophercloud.ServiceClient
 	projectID     string
 	vpcBaseURL    string
-	
+
 	// Cluster network CIDRs parsed as *net.IPNet
-	clusterCIDRs  []*net.IPNet
-	serviceCIDRs  []*net.IPNet
-	
+	clusterCIDRs []*net.IPNet
+
 	// Metrics
 	nodesProcessed *prometheus.CounterVec
 	routeUpdates   *prometheus.CounterVec
@@ -85,10 +83,10 @@ type NodeSubnetInfoArrayFormat struct {
 
 // OTC Route Table structures
 type RouteTable struct {
-	ID    string  `json:"id"`
-	Name  string  `json:"name"`
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
 	Routes []Route `json:"routes"`
-	VPCID string  `json:"vpc_id"`
+	VPCID  string  `json:"vpc_id"`
 }
 
 type Route struct {
@@ -117,74 +115,61 @@ func parseCIDRs(cidrs string) ([]*net.IPNet, error) {
 	if cidrs == "" {
 		return nil, nil
 	}
-	
+
 	var networks []*net.IPNet
 	for _, cidr := range strings.Split(cidrs, ",") {
 		cidr = strings.TrimSpace(cidr)
 		if cidr == "" {
 			continue
 		}
-		
+
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid CIDR %s: %w", cidr, err)
 		}
 		networks = append(networks, network)
 	}
-	
+
 	return networks, nil
 }
 
-// isClusterTrafficRoute checks if a destination CIDR is part of cluster or service networks
+// isClusterTrafficRoute checks if a destination CIDR is part of cluster networks
 func (rm *RouteManager) isClusterTrafficRoute(destinationCIDR string) bool {
 	// Never touch the default route
 	if destinationCIDR == "0.0.0.0/0" || destinationCIDR == "::/0" {
 		log.Printf("Skipping default route: %s", destinationCIDR)
 		return false
 	}
-	
+
 	_, network, err := net.ParseCIDR(destinationCIDR)
 	if err != nil {
 		log.Printf("Warning: Invalid CIDR %s: %v", destinationCIDR, err)
 		return false
 	}
-	
-	// Check if the destination is contained within any cluster CIDR
+
 	for _, clusterNet := range rm.clusterCIDRs {
 		if clusterNet.Contains(network.IP) && isSubnetContainedIn(network, clusterNet) {
 			log.Printf("Route %s matches cluster CIDR %s", destinationCIDR, clusterNet.String())
 			return true
 		}
 	}
-	
-	// Check if the destination is contained within any service CIDR
-	for _, serviceNet := range rm.serviceCIDRs {
-		if serviceNet.Contains(network.IP) && isSubnetContainedIn(network, serviceNet) {
-			log.Printf("Route %s matches service CIDR %s", destinationCIDR, serviceNet.String())
-			return true
-		}
-	}
-	
+
 	return false
 }
 
 // isSubnetContainedIn checks if subnet1 is completely contained within subnet2
 func isSubnetContainedIn(subnet1, subnet2 *net.IPNet) bool {
-	// Get the network sizes
 	ones1, bits1 := subnet1.Mask.Size()
 	ones2, bits2 := subnet2.Mask.Size()
-	
-	// Must be same IP version
+
 	if bits1 != bits2 {
 		return false
 	}
-	
-	// subnet1 must be more specific (equal or longer prefix) than subnet2
+
 	if ones1 < ones2 {
 		return false
 	}
-	
-	// Check if subnet1's network address is within subnet2
+
 	return subnet2.Contains(subnet1.IP)
 }
 
@@ -200,19 +185,12 @@ func NewRouteManager(config *Config) (*RouteManager, error) {
 		return nil, fmt.Errorf("failed to initialize OTC clients: %w", err)
 	}
 
-	// Parse cluster and service CIDRs
 	clusterCIDRs, err := parseCIDRs(config.ClusterCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse cluster CIDRs: %w", err)
 	}
-	
-	serviceCIDRs, err := parseCIDRs(config.ServiceCIDR)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse service CIDRs: %w", err)
-	}
-	
+
 	log.Printf("Managing routes for cluster CIDRs: %s", config.ClusterCIDR)
-	log.Printf("Managing routes for service CIDRs: %s", config.ServiceCIDR)
 
 	nodesProcessed := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -221,7 +199,7 @@ func NewRouteManager(config *Config) (*RouteManager, error) {
 		},
 		[]string{"status"},
 	)
-	
+
 	routeUpdates := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "route_manager_updates_total",
@@ -229,7 +207,7 @@ func NewRouteManager(config *Config) (*RouteManager, error) {
 		},
 		[]string{"operation", "status"},
 	)
-	
+
 	lastUpdate := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "route_manager_last_update_timestamp",
@@ -251,7 +229,6 @@ func NewRouteManager(config *Config) (*RouteManager, error) {
 		projectID:      projectID,
 		vpcBaseURL:     vpcBaseURL,
 		clusterCIDRs:   clusterCIDRs,
-		serviceCIDRs:   serviceCIDRs,
 		nodesProcessed: nodesProcessed,
 		routeUpdates:   routeUpdates,
 		lastUpdate:     lastUpdate,
@@ -267,7 +244,7 @@ func initKubernetesClient(kubeConfigPath string) (kubernetes.Interface, error) {
 	} else {
 		config, err = rest.InClusterConfig()
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +257,7 @@ func getProjectIDByName(identityClient *gophercloud.ServiceClient, projectName s
 		ProviderClient: identityClient.ProviderClient,
 		Endpoint:       identityClient.Endpoint,
 	}
-	
+
 	listOpts := projects.ListOpts{
 		Name: projectName,
 	}
@@ -395,7 +372,7 @@ func (rm *RouteManager) GetRouteTable() (*RouteTable, error) {
 
 	url := fmt.Sprintf("%s%s/routetables/%s", rm.vpcBaseURL, rm.projectID, rm.config.RouteTableID)
 	log.Printf("Getting route table from URL: %s", url)
-	
+
 	var result gophercloud.Result
 	_, err := rm.otcClient.Get(url, &result.Body, nil)
 	if err != nil {
@@ -418,7 +395,6 @@ func (rm *RouteManager) UpdateRouteTable(operations RouteUpdateOperations) error
 		return fmt.Errorf("route table ID is required")
 	}
 
-	// Only include operations that have routes
 	updateRequest := RouteTableUpdateRequest{
 		Routetable: RouteTableUpdate{
 			Routes: operations,
@@ -427,17 +403,13 @@ func (rm *RouteManager) UpdateRouteTable(operations RouteUpdateOperations) error
 
 	url := fmt.Sprintf("%s%s/routetables/%s", rm.vpcBaseURL, rm.projectID, rm.config.RouteTableID)
 	log.Printf("Updating route table at URL: %s", url)
-	
-	requestBody, _ := json.Marshal(updateRequest)
-	log.Printf("Request body: %s", string(requestBody))
-	
+
 	var result gophercloud.Result
 	_, err := rm.otcClient.Put(url, updateRequest, &result.Body, &gophercloud.RequestOpts{
 		JSONBody: updateRequest,
 		OkCodes:  []int{200, 201, 202},
 	})
 	if err != nil {
-		// Update metrics on error
 		if len(operations.Add) > 0 {
 			rm.routeUpdates.WithLabelValues("add", "error").Add(float64(len(operations.Add)))
 		}
@@ -450,7 +422,6 @@ func (rm *RouteManager) UpdateRouteTable(operations RouteUpdateOperations) error
 		return fmt.Errorf("failed to update route table: %w", err)
 	}
 
-	// Update metrics on success
 	if len(operations.Add) > 0 {
 		rm.routeUpdates.WithLabelValues("add", "success").Add(float64(len(operations.Add)))
 	}
@@ -461,7 +432,6 @@ func (rm *RouteManager) UpdateRouteTable(operations RouteUpdateOperations) error
 		rm.routeUpdates.WithLabelValues("delete", "success").Add(float64(len(operations.Del)))
 	}
 
-	// Optionally extract and log the response
 	var response struct {
 		RouteTable RouteTable `json:"routetable"`
 	}
@@ -554,7 +524,6 @@ func (rm *RouteManager) findInstanceByNodeName(nodeName string) (string, error) 
 }
 
 func (rm *RouteManager) CreateOrUpdateRoute(destinationCIDR, nextHop string) error {
-	// Only manage routes for cluster traffic
 	if !rm.isClusterTrafficRoute(destinationCIDR) {
 		log.Printf("Skipping route %s: not cluster traffic", destinationCIDR)
 		return nil
@@ -565,7 +534,6 @@ func (rm *RouteManager) CreateOrUpdateRoute(destinationCIDR, nextHop string) err
 		return fmt.Errorf("failed to get route table: %w", err)
 	}
 
-	// Check if route already exists and needs modification
 	var operations RouteUpdateOperations
 	routeExists := false
 
@@ -581,7 +549,6 @@ func (rm *RouteManager) CreateOrUpdateRoute(destinationCIDR, nextHop string) err
 	}
 
 	if routeExists {
-		// Modify existing route
 		operations.Mod = []Route{
 			{
 				Destination: destinationCIDR,
@@ -591,7 +558,6 @@ func (rm *RouteManager) CreateOrUpdateRoute(destinationCIDR, nextHop string) err
 		}
 		log.Printf("Modifying cluster route: destination=%s, nextHop=%s, type=ecs", destinationCIDR, nextHop)
 	} else {
-		// Add new route
 		operations.Add = []Route{
 			{
 				Destination: destinationCIDR,
@@ -610,40 +576,6 @@ func (rm *RouteManager) CreateOrUpdateRoute(destinationCIDR, nextHop string) err
 	return nil
 }
 
-func (rm *RouteManager) GetNextHopIP(ctx context.Context, nodeName string) (string, error) {
-	node, err := rm.kubeClient.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to get node %s: %w", nodeName, err)
-	}
-
-	for _, address := range node.Status.Addresses {
-		if address.Type == corev1.NodeInternalIP {
-			log.Printf("Found node internal IP: %s", address.Address)
-			return address.Address, nil
-		}
-	}
-
-	return "", fmt.Errorf("no internal IP found for node %s", nodeName)
-}
-
-func isWorkerNode(node corev1.Node) bool {
-	for _, taint := range node.Spec.Taints {
-		if taint.Key == "node-role.kubernetes.io/master" || 
-		   taint.Key == "node-role.kubernetes.io/control-plane" {
-			return false
-		}
-	}
-	
-	if role, exists := node.Labels["node-role.kubernetes.io/master"]; exists && role == "true" {
-		return false
-	}
-	if role, exists := node.Labels["node-role.kubernetes.io/control-plane"]; exists && role == "true" {
-		return false
-	}
-	
-	return true
-}
-
 func (rm *RouteManager) ProcessNode(ctx context.Context, nodeName string) error {
 	log.Printf("Processing node: %s", nodeName)
 
@@ -653,14 +585,12 @@ func (rm *RouteManager) ProcessNode(ctx context.Context, nodeName string) error 
 		return fmt.Errorf("failed to get subnet annotation: %w", err)
 	}
 
-	// Skip if the node subnet is not part of cluster traffic
 	if !rm.isClusterTrafficRoute(subnetInfo.Default) {
 		log.Printf("Skipping node %s: subnet %s is not cluster traffic", nodeName, subnetInfo.Default)
 		rm.nodesProcessed.WithLabelValues("skipped").Inc()
 		return nil
 	}
 
-	// Get the ECS instance ID for the next hop
 	instanceID, err := rm.GetNodeMachineID(ctx, nodeName)
 	if err != nil {
 		rm.nodesProcessed.WithLabelValues("error").Inc()
@@ -716,14 +646,13 @@ func (rm *RouteManager) CleanupStaleRoutes(ctx context.Context) error {
 		if !isWorkerNode(node) {
 			continue
 		}
-		
+
 		subnetInfo, err := rm.GetNodeSubnetAnnotation(ctx, node.Name)
 		if err != nil {
 			log.Printf("Warning: Failed to get subnet for node %s: %v", node.Name, err)
 			continue
 		}
-		
-		// Only track cluster traffic subnets
+
 		if rm.isClusterTrafficRoute(subnetInfo.Default) {
 			activeSubnets[subnetInfo.Default] = true
 		}
@@ -731,7 +660,6 @@ func (rm *RouteManager) CleanupStaleRoutes(ctx context.Context) error {
 
 	var routesToDelete []Route
 	for _, route := range routeTable.Routes {
-		// Only consider deleting routes that are cluster traffic routes
 		if rm.isClusterTrafficRoute(route.Destination) && !activeSubnets[route.Destination] {
 			routesToDelete = append(routesToDelete, route)
 			log.Printf("Marking stale cluster route for deletion: CIDR=%s", route.Destination)
@@ -762,7 +690,7 @@ func (rm *RouteManager) WatchNodes(ctx context.Context) error {
 	defer watcher.Stop()
 
 	ch := watcher.ResultChan()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -771,16 +699,16 @@ func (rm *RouteManager) WatchNodes(ctx context.Context) error {
 			if !ok {
 				return fmt.Errorf("watch channel closed")
 			}
-			
+
 			node, ok := event.Object.(*corev1.Node)
 			if !ok {
 				continue
 			}
-			
+
 			if !isWorkerNode(*node) {
 				continue
 			}
-			
+
 			switch event.Type {
 			case watch.Added, watch.Modified:
 				log.Printf("Node %s added/modified", node.Name)
@@ -797,7 +725,24 @@ func (rm *RouteManager) WatchNodes(ctx context.Context) error {
 	}
 }
 
-// runDaemonsetMode runs the route manager in daemonset mode with periodic updates for a single node
+func isWorkerNode(node corev1.Node) bool {
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == "node-role.kubernetes.io/master" ||
+			taint.Key == "node-role.kubernetes.io/control-plane" {
+			return false
+		}
+	}
+
+	if role, exists := node.Labels["node-role.kubernetes.io/master"]; exists && role == "true" {
+		return false
+	}
+	if role, exists := node.Labels["node-role.kubernetes.io/control-plane"]; exists && role == "true" {
+		return false
+	}
+
+	return true
+}
+
 func (rm *RouteManager) runDaemonsetMode(ctx context.Context) error {
 	nodeName := rm.config.NodeName
 	if nodeName == "" {
@@ -806,7 +751,6 @@ func (rm *RouteManager) runDaemonsetMode(ctx context.Context) error {
 
 	log.Printf("Starting daemonset mode for node %s with update interval %v", nodeName, rm.config.UpdateInterval)
 
-	// Initial route update
 	log.Printf("Performing initial route update for node %s", nodeName)
 	if err := rm.ProcessNode(ctx, nodeName); err != nil {
 		log.Printf("Initial route update failed for node %s: %v", nodeName, err)
@@ -837,12 +781,12 @@ func (rm *RouteManager) StartMetricsServer() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	
+
 	port := rm.config.MetricsPort
 	if port == "" {
 		port = "8080"
 	}
-	
+
 	go func() {
 		log.Printf("Starting metrics server on :%s", port)
 		if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -851,18 +795,11 @@ func (rm *RouteManager) StartMetricsServer() {
 	}()
 }
 
-func withRetry(operation func() error, maxRetries int) error {
-	var err error
-	for i := 0; i < maxRetries; i++ {
-		err = operation()
-		if err == nil {
-			return nil
-		}
-		if i < maxRetries-1 {
-			time.Sleep(time.Duration(i+1) * time.Second * 2)
-		}
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return err
+	return defaultValue
 }
 
 func loadConfigFromEnv() *Config {
@@ -878,13 +815,10 @@ func loadConfigFromEnv() *Config {
 		RouteTableID:     os.Getenv("ROUTE_TABLE_ID"),
 		MetricsPort:      getEnvOrDefault("METRICS_PORT", "8080"),
 		ClusterCIDR:      getEnvOrDefault("CLUSTER_CIDR", "192.168.0.0/16"),
-		ServiceCIDR:      getEnvOrDefault("SERVICE_CIDR", "172.16.0.0/16"),
 	}
 
-	// Determine if running in daemonset mode
 	config.IsDaemonset = config.NodeName != ""
 
-	// Parse update interval for daemonset mode
 	intervalStr := getEnvOrDefault("UPDATE_INTERVAL", "60")
 	intervalSeconds, err := strconv.Atoi(intervalStr)
 	if err != nil {
@@ -896,19 +830,12 @@ func loadConfigFromEnv() *Config {
 	return config
 }
 
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 func validateConfig(config *Config) error {
 	required := map[string]string{
-		"OS_USERNAME":      config.Username,
-		"OS_PASSWORD":      config.Password,
-		"OS_PROJECT_NAME":  config.ProjectName,
-		"ROUTE_TABLE_ID":   config.RouteTableID,
+		"OS_USERNAME":     config.Username,
+		"OS_PASSWORD":     config.Password,
+		"OS_PROJECT_NAME": config.ProjectName,
+		"ROUTE_TABLE_ID":  config.RouteTableID,
 	}
 
 	for name, value := range required {
@@ -916,17 +843,15 @@ func validateConfig(config *Config) error {
 			return fmt.Errorf("missing required configuration: %s", name)
 		}
 	}
-	
-	// Validate that at least one of CLUSTER_CIDR or SERVICE_CIDR is provided
-	if config.ClusterCIDR == "" && config.ServiceCIDR == "" {
-		return fmt.Errorf("at least one of CLUSTER_CIDR or SERVICE_CIDR must be provided")
+
+	if config.ClusterCIDR == "" {
+		return fmt.Errorf("CLUSTER_CIDR must be provided")
 	}
-	
-	// Validate update interval for daemonset mode
+
 	if config.IsDaemonset && config.UpdateInterval < time.Second {
 		return fmt.Errorf("UPDATE_INTERVAL must be at least 1 second")
 	}
-	
+
 	return nil
 }
 
@@ -934,7 +859,7 @@ func main() {
 	log.Println("Starting OTC Kubernetes Route Manager (Cluster Traffic Only)")
 
 	config := loadConfigFromEnv()
-	
+
 	if err := validateConfig(config); err != nil {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
@@ -949,18 +874,15 @@ func main() {
 	ctx := context.Background()
 
 	if config.IsDaemonset {
-		// Daemonset mode: continuously manage routes for a single node
 		log.Printf("Running in daemonset mode for node: %s", config.NodeName)
 		if err := routeManager.runDaemonsetMode(ctx); err != nil {
 			log.Fatalf("Daemonset mode failed: %v", err)
 		}
 	} else {
-		// Clean up any stale cluster routes first
 		if err := routeManager.CleanupStaleRoutes(ctx); err != nil {
 			log.Printf("Warning: Failed to cleanup stale routes: %v", err)
 		}
 
-		// Traditional mode: manage all nodes
 		log.Println("Running in traditional mode (managing all worker nodes)")
 		log.Println("Processing all worker nodes initially...")
 		if err := routeManager.ProcessAllNodes(ctx); err != nil {
