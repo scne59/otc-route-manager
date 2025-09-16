@@ -1,6 +1,6 @@
-# OTC Route Manager - OpenShift/Kubernetes Deployment
+# OTC Route Manager - OpenShift/Kubernetes Deployment/Daemonset
 
-The OTC Route Manager is a Kubernetes DaemonSet that automatically manages VPC routes for cluster network traffic in Open Telekom Cloud (OTC). It runs on worker nodes and creates/updates routes to direct cluster and service traffic to the appropriate ECS instances.
+The OTC Route Manager is a Kubernetes program that automatically manages VPC routes for cluster network traffic in Open Telekom Cloud (OTC). It runs on worker nodes and creates/updates routes to direct cluster and service traffic to the appropriate ECS instances.
 
 ## Features
 
@@ -9,7 +9,7 @@ The OTC Route Manager is a Kubernetes DaemonSet that automatically manages VPC r
 - **Safe Route Management**: Never touches default routes (0.0.0.0/0) or non-cluster routes
 - **Prometheus Metrics**: Exposes metrics for monitoring and alerting
 - **OpenShift Security**: Follows OpenShift security best practices with restricted security contexts
-- **High Availability**: Runs as a DaemonSet with proper health checks and rolling updates
+- **High Availability**: Can runs as a DaemonSet with proper health checks and rolling updates
 
 ## Architecture
 
@@ -29,11 +29,11 @@ The OTC Route Manager is a Kubernetes DaemonSet that automatically manages VPC r
                     │   OTC VPC Router    │
                     │   Route Table       │
                     │                     │
-                    │ 10.244.1.0/24 →    │
+                    │ 10.244.1.0/24 →     │
                     │   node-1-instance   │
-                    │ 10.244.2.0/24 →    │
+                    │ 10.244.2.0/24 →     │
                     │   node-2-instance   │
-                    │ 10.244.3.0/24 →    │
+                    │ 10.244.3.0/24 →     │
                     │   node-3-instance   │
                     └─────────────────────┘
 ```
