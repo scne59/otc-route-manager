@@ -127,20 +127,20 @@ The service account needs the following OTC permissions:
 ```
 
 {
-"Version": "1.1",
-"Statement": [
-{
-"Effect": "Allow",
-"Action": [
-"ecs:cloudServers:list",
-"ecs:cloudServers:get",
-"vpc:routeTables:get",
-"vpc:routeTables:update",
-"iam:projects:listProjects"
-],
-"Resource": "*"
-}
-]
+  "Version": "1.1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:cloudServers:list",
+        "ecs:cloudServers:get",
+        "vpc:routeTables:get",
+        "vpc:routeTables:update",
+        "iam:projects:listProjects"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 
 ```
