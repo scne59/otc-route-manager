@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,10 @@ type Config struct {
 	MetricsPort   string
 	ClusterCIDR   string
 	ServiceCIDR   string
+	
+	// Daemonset mode configuration
+	IsDaemonset    bool
+	UpdateInterval time.Duration
 }
 
 // RouteManager manages VPC routes for Kubernetes nodes
@@ -62,6 +67,8 @@ type RouteManager struct {
 	
 	// Metrics
 	nodesProcessed *prometheus.CounterVec
+	routeUpdates   *prometheus.CounterVec
+	lastUpdate     *prometheus.GaugeVec
 }
 
 // NodeSubnetInfo holds the parsed subnet information from node annotation
@@ -214,7 +221,26 @@ func NewRouteManager(config *Config) (*RouteManager, error) {
 		},
 		[]string{"status"},
 	)
+	
+	routeUpdates := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "route_manager_updates_total",
+			Help: "Total number of route updates",
+		},
+		[]string{"operation", "status"},
+	)
+	
+	lastUpdate := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "route_manager_last_update_timestamp",
+			Help: "Timestamp of last route update",
+		},
+		[]string{"node"},
+	)
+
 	prometheus.MustRegister(nodesProcessed)
+	prometheus.MustRegister(routeUpdates)
+	prometheus.MustRegister(lastUpdate)
 
 	return &RouteManager{
 		config:         config,
@@ -227,6 +253,8 @@ func NewRouteManager(config *Config) (*RouteManager, error) {
 		clusterCIDRs:   clusterCIDRs,
 		serviceCIDRs:   serviceCIDRs,
 		nodesProcessed: nodesProcessed,
+		routeUpdates:   routeUpdates,
+		lastUpdate:     lastUpdate,
 	}, nil
 }
 
@@ -406,10 +434,31 @@ func (rm *RouteManager) UpdateRouteTable(operations RouteUpdateOperations) error
 	var result gophercloud.Result
 	_, err := rm.otcClient.Put(url, updateRequest, &result.Body, &gophercloud.RequestOpts{
 		JSONBody: updateRequest,
-		OkCodes:  []int{200, 201, 202}, // Accept 200 as success
+		OkCodes:  []int{200, 201, 202},
 	})
 	if err != nil {
+		// Update metrics on error
+		if len(operations.Add) > 0 {
+			rm.routeUpdates.WithLabelValues("add", "error").Add(float64(len(operations.Add)))
+		}
+		if len(operations.Mod) > 0 {
+			rm.routeUpdates.WithLabelValues("modify", "error").Add(float64(len(operations.Mod)))
+		}
+		if len(operations.Del) > 0 {
+			rm.routeUpdates.WithLabelValues("delete", "error").Add(float64(len(operations.Del)))
+		}
 		return fmt.Errorf("failed to update route table: %w", err)
+	}
+
+	// Update metrics on success
+	if len(operations.Add) > 0 {
+		rm.routeUpdates.WithLabelValues("add", "success").Add(float64(len(operations.Add)))
+	}
+	if len(operations.Mod) > 0 {
+		rm.routeUpdates.WithLabelValues("modify", "success").Add(float64(len(operations.Mod)))
+	}
+	if len(operations.Del) > 0 {
+		rm.routeUpdates.WithLabelValues("delete", "success").Add(float64(len(operations.Del)))
 	}
 
 	// Optionally extract and log the response
@@ -625,6 +674,7 @@ func (rm *RouteManager) ProcessNode(ctx context.Context, nodeName string) error 
 	}
 
 	rm.nodesProcessed.WithLabelValues("success").Inc()
+	rm.lastUpdate.WithLabelValues(nodeName).SetToCurrentTime()
 	log.Printf("Successfully processed node %s", nodeName)
 	return nil
 }
@@ -747,6 +797,40 @@ func (rm *RouteManager) WatchNodes(ctx context.Context) error {
 	}
 }
 
+// runDaemonsetMode runs the route manager in daemonset mode with periodic updates for a single node
+func (rm *RouteManager) runDaemonsetMode(ctx context.Context) error {
+	nodeName := rm.config.NodeName
+	if nodeName == "" {
+		return fmt.Errorf("NODE_NAME is required for daemonset mode")
+	}
+
+	log.Printf("Starting daemonset mode for node %s with update interval %v", nodeName, rm.config.UpdateInterval)
+
+	// Initial route update
+	log.Printf("Performing initial route update for node %s", nodeName)
+	if err := rm.ProcessNode(ctx, nodeName); err != nil {
+		log.Printf("Initial route update failed for node %s: %v", nodeName, err)
+	}
+
+	ticker := time.NewTicker(rm.config.UpdateInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Context cancelled, stopping daemonset mode")
+			return ctx.Err()
+		case <-ticker.C:
+			log.Printf("Periodic route update for node %s", nodeName)
+			if err := rm.ProcessNode(ctx, nodeName); err != nil {
+				log.Printf("Periodic route update failed for node %s: %v", nodeName, err)
+			} else {
+				log.Printf("Successfully updated route for node %s", nodeName)
+			}
+		}
+	}
+}
+
 func (rm *RouteManager) StartMetricsServer() {
 	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -782,7 +866,7 @@ func withRetry(operation func() error, maxRetries int) error {
 }
 
 func loadConfigFromEnv() *Config {
-	return &Config{
+	config := &Config{
 		KubeConfigPath:   os.Getenv("KUBECONFIG"),
 		NodeName:         os.Getenv("NODE_NAME"),
 		IdentityEndpoint: getEnvOrDefault("OS_AUTH_URL", "https://iam.eu-de.otc.t-systems.com/v3"),
@@ -796,6 +880,20 @@ func loadConfigFromEnv() *Config {
 		ClusterCIDR:      getEnvOrDefault("CLUSTER_CIDR", "192.168.0.0/16"),
 		ServiceCIDR:      getEnvOrDefault("SERVICE_CIDR", "172.16.0.0/16"),
 	}
+
+	// Determine if running in daemonset mode
+	config.IsDaemonset = config.NodeName != ""
+
+	// Parse update interval for daemonset mode
+	intervalStr := getEnvOrDefault("UPDATE_INTERVAL", "60")
+	intervalSeconds, err := strconv.Atoi(intervalStr)
+	if err != nil {
+		log.Printf("Warning: invalid UPDATE_INTERVAL value %s, using default 60s", intervalStr)
+		intervalSeconds = 60
+	}
+	config.UpdateInterval = time.Duration(intervalSeconds) * time.Second
+
+	return config
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -824,6 +922,11 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("at least one of CLUSTER_CIDR or SERVICE_CIDR must be provided")
 	}
 	
+	// Validate update interval for daemonset mode
+	if config.IsDaemonset && config.UpdateInterval < time.Second {
+		return fmt.Errorf("UPDATE_INTERVAL must be at least 1 second")
+	}
+	
 	return nil
 }
 
@@ -845,18 +948,20 @@ func main() {
 
 	ctx := context.Background()
 
-	// Clean up any stale cluster routes
-	if err := routeManager.CleanupStaleRoutes(ctx); err != nil {
-		log.Printf("Warning: Failed to cleanup stale routes: %v", err)
-	}
-
-	if config.NodeName != "" {
-		log.Printf("Processing single node: %s", config.NodeName)
-		if err := routeManager.ProcessNode(ctx, config.NodeName); err != nil {
-			log.Fatalf("Failed to process node %s: %v", config.NodeName, err)
+	if config.IsDaemonset {
+		// Daemonset mode: continuously manage routes for a single node
+		log.Printf("Running in daemonset mode for node: %s", config.NodeName)
+		if err := routeManager.runDaemonsetMode(ctx); err != nil {
+			log.Fatalf("Daemonset mode failed: %v", err)
 		}
-		log.Println("Single node processing completed")
 	} else {
+		// Clean up any stale cluster routes first
+		if err := routeManager.CleanupStaleRoutes(ctx); err != nil {
+			log.Printf("Warning: Failed to cleanup stale routes: %v", err)
+		}
+
+		// Traditional mode: manage all nodes
+		log.Println("Running in traditional mode (managing all worker nodes)")
 		log.Println("Processing all worker nodes initially...")
 		if err := routeManager.ProcessAllNodes(ctx); err != nil {
 			log.Printf("Error during initial processing: %v", err)
@@ -868,4 +973,3 @@ func main() {
 		}
 	}
 }
-	
