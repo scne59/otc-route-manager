@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
-	"github.com/gophercloud/gophercloud/openstack/identity/v3/projects"
+	gophercloud "github.com/opentelekomcloud/gophertelekomcloud"
+	"github.com/opentelekomcloud/gophertelekomcloud/openstack"
+	"github.com/opentelekomcloud/gophertelekomcloud/openstack/compute/v2/servers"
+	"github.com/opentelekomcloud/gophertelekomcloud/openstack/identity/v3/projects"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -36,6 +36,8 @@ type Config struct {
 	IdentityEndpoint string
 	Username         string
 	Password         string
+	AccessKey        string
+	SecretKey        string
 	DomainName       string
 	ProjectName      string
 	Region           string
@@ -302,21 +304,38 @@ func initOTCClients(config *Config) (*gophercloud.ServiceClient, *gophercloud.Se
 		return nil, nil, nil, "", "", fmt.Errorf("failed to construct identity endpoint for region %s", config.Region)
 	}
 
-	opts := gophercloud.AuthOptions{
-		IdentityEndpoint: identityEndpoint,
-		Username:         config.Username,
-		Password:         config.Password,
-		DomainName:       config.DomainName,
+	// First, authenticate to get an unscoped token
+	unscopedAuthInfo := openstack.AuthInfo{
+		AuthURL:    identityEndpoint,
+		DomainName: config.DomainName,
 	}
 
-	provider, err := openstack.AuthenticatedClient(opts)
+	var authType openstack.AuthType
+	if config.AccessKey != "" && config.SecretKey != "" {
+		log.Println("Authenticating with Access Key and Secret Key...")
+		unscopedAuthInfo.AccessKey = config.AccessKey
+		unscopedAuthInfo.SecretKey = config.SecretKey
+		authType = openstack.AuthType("aksk")
+	} else {
+		log.Println("Authenticating with Username and Password...")
+		unscopedAuthInfo.Username = config.Username
+		unscopedAuthInfo.Password = config.Password
+		authType = openstack.AuthType("password")
+	}
+
+	unscopedOpts, err := openstack.AuthOptionsFromInfo(&unscopedAuthInfo, authType)
 	if err != nil {
-		return nil, nil, nil, "", "", fmt.Errorf("failed to authenticate with OTC: %w", err)
+		return nil, nil, nil, "", "", fmt.Errorf("failed to build unscoped auth options: %w", err)
 	}
 
-	identityClient := &gophercloud.ServiceClient{
-		ProviderClient: provider,
-		Endpoint:       identityEndpoint,
+	unscopedProvider, err := openstack.AuthenticatedClient(unscopedOpts)
+	if err != nil {
+		return nil, nil, nil, "", "", fmt.Errorf("failed to get unscoped token: %w", err)
+	}
+
+	identityClient, err := openstack.NewIdentityV3(unscopedProvider, gophercloud.EndpointOpts{Region: config.Region})
+	if err != nil {
+		return nil, nil, nil, "", "", fmt.Errorf("failed to create identity client: %w", err)
 	}
 
 	projectID, err := getProjectIDByName(identityClient, config.ProjectName)
@@ -326,15 +345,27 @@ func initOTCClients(config *Config) (*gophercloud.ServiceClient, *gophercloud.Se
 
 	log.Printf("Found project ID: %s for project name: %s", projectID, config.ProjectName)
 
-	projectOpts := gophercloud.AuthOptions{
-		IdentityEndpoint: identityEndpoint,
-		Username:         config.Username,
-		Password:         config.Password,
-		DomainName:       config.DomainName,
-		TenantID:         projectID,
+	// Now authenticate again with project scope using ProjectID
+	scopedAuthInfo := openstack.AuthInfo{
+		AuthURL:   identityEndpoint,
+		DomainName: config.DomainName,
+		ProjectID: projectID,  // Use ProjectID instead of ProjectName
 	}
 
-	projectProvider, err := openstack.AuthenticatedClient(projectOpts)
+	if config.AccessKey != "" && config.SecretKey != "" {
+		scopedAuthInfo.AccessKey = config.AccessKey
+		scopedAuthInfo.SecretKey = config.SecretKey
+	} else {
+		scopedAuthInfo.Username = config.Username
+		scopedAuthInfo.Password = config.Password
+	}
+
+	scopedOpts, err := openstack.AuthOptionsFromInfo(&scopedAuthInfo, authType)
+	if err != nil {
+		return nil, nil, nil, "", "", fmt.Errorf("failed to build scoped auth options: %w", err)
+	}
+
+	provider, err := openstack.AuthenticatedClient(scopedOpts)
 	if err != nil {
 		return nil, nil, nil, "", "", fmt.Errorf("failed to authenticate with project scope: %w", err)
 	}
@@ -345,7 +376,7 @@ func initOTCClients(config *Config) (*gophercloud.ServiceClient, *gophercloud.Se
 	}
 
 	vpcClient := &gophercloud.ServiceClient{
-		ProviderClient: projectProvider,
+		ProviderClient: provider,
 		Endpoint:       vpcEndpoint,
 	}
 
@@ -358,12 +389,14 @@ func initOTCClients(config *Config) (*gophercloud.ServiceClient, *gophercloud.Se
 	}
 
 	computeClient := &gophercloud.ServiceClient{
-		ProviderClient: projectProvider,
+		ProviderClient: provider,
 		Endpoint:       computeEndpoint,
 	}
 
 	return vpcClient, computeClient, identityClient, projectID, vpcBaseURL, nil
 }
+
+
 
 func (rm *RouteManager) GetRouteTable() (*RouteTable, error) {
 	if rm.config.RouteTableID == "" {
@@ -809,6 +842,8 @@ func loadConfigFromEnv() *Config {
 		IdentityEndpoint: getEnvOrDefault("OS_AUTH_URL", "https://iam.eu-de.otc.t-systems.com/v3"),
 		Username:         os.Getenv("OS_USERNAME"),
 		Password:         os.Getenv("OS_PASSWORD"),
+		AccessKey:        os.Getenv("OS_ACCESS_KEY"),  // ADD THIS
+		SecretKey:        os.Getenv("OS_SECRET_KEY"),  // ADD THIS
 		DomainName:       getEnvOrDefault("OS_DOMAIN_NAME", "OTC00000000001000000xxx"),
 		ProjectName:      os.Getenv("OS_PROJECT_NAME"),
 		Region:           getEnvOrDefault("OS_REGION_NAME", "eu-de"),
@@ -831,9 +866,15 @@ func loadConfigFromEnv() *Config {
 }
 
 func validateConfig(config *Config) error {
+	// Check that we have either Username/Password OR AccessKey/SecretKey
+	hasUsernamePassword := config.Username != "" && config.Password != ""
+	hasAccessKeySecret := config.AccessKey != "" && config.SecretKey != ""
+	
+	if !hasUsernamePassword && !hasAccessKeySecret {
+		return fmt.Errorf("missing authentication: either OS_USERNAME/OS_PASSWORD or OS_ACCESS_KEY/OS_SECRET_KEY must be provided")
+	}
+
 	required := map[string]string{
-		"OS_USERNAME":     config.Username,
-		"OS_PASSWORD":     config.Password,
 		"OS_PROJECT_NAME": config.ProjectName,
 		"ROUTE_TABLE_ID":  config.RouteTableID,
 	}
